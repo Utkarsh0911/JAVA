@@ -1,0 +1,354 @@
+Executor Framework
+
+Earlier we were used to create the threads manually which was not correct.
+Each threads takes --> 512kb to 1Mb memory in the system, so if we create 1000 threads it takes around 512Mb to 1GB of memory, and more if we create more threads.
+
+┌─────────────────────────────────┐
+│              CPU                │
+│                                 │
+│   ┌────────┐      ┌────────┐    │
+│   │ Core 0 │      │ Core 1 │    │
+│   └────────┘      └────────┘    │
+│                                 │
+│   ┌────────┐      ┌────────┐    │
+│   │ Core 2 │      │ Core 3 │    │
+│   └────────┘      └────────┘    │
+│                                 │
+│   ┌─────────────────────────┐   │
+│   │    Shared L3 Cache      │   │
+│   └─────────────────────────┘   │
+└─────────────────────────────────┘
+
+
+Now consider if a CPU has 4 cores, it executes only 4 tasks at a time by each thread.
+
+if we provide 8 tasks then the thread running on each core saves the state of the current thread and execute another thread and then saves again and continue another. This is called as context switching.
+
+Cons of manually creating a thread
+
+1. Time consuming - as context switching takes time , cpu busy in context switching rather than executing task.
+2. Thread Creation Time - it takes time to create the thread, if multiple threads are there, it will take more time.
+3. Not Terminated Threads - If the threads are not terminated, it consumes memory in the system.
+
+CPU thrashing -- maximum time CPU busy in context switching rather than executing threads.
+
++------------------------------------------------------------------------------------+
+|                         >>>  EXECUTOR FRAMEWORK  <<<                               |
++------------------------------------------------------------------------------------+
+
+Executor Framework is a concurrency framework provided by java that decouples the task submission and thread management. The thread creation and management will be handled by this framework. It provides reusable thread.
+
+Earlier if we manually create 1000 threads, context switching takes more time and memory.
+
+Now using executor framework, we give fixed number of threads needs to be created to framework and context switching happens between those threads which reduces CPU thrashing.
+
+We can't completely eliminate the context switching.
+
+
+Executor framework provide us the pool of thread and a queue. The pool contains the threads which executes the task concurrently and queue contains the pending tasks if no threads available in the pool
+
+
+                  Task Submission
+                         │
+                         ▼
+             +-----------------------+
+             |   Executor Service    |
+             +-----------------------+
+                         │
+                         ▼
+             +-----------------------+
+             |  Work Queue (Pending) |
+             |  [Task 3] [Task 2]    |
+             +-----------------------+
+                         │
+         +---------------┴---------------+
+         │  Threads pull available tasks  │
+         ▼                               ▼
++-----------------+             +-----------------+
+| Thread Pool     |             | Thread Pool     |
+| Worker Thread A |             | Worker Thread B |
+| (Executing T1)  |             | (Idle / Waiting)|
++-----------------+             +-----------------+
+
+
+
+example - if we have 2 threads available in the pool, and 4 tasks coming up at a perticular time period, 2 tasks have been directly given to thread for execution and rest will wait in the worker queue.
+
+[ 4 Tasks Arrive ]
+       │
+       ├─► Task 1 ──(Direct Handover)──► [ Thread 1 : Executing ]
+       │
+       ├─► Task 2 ──(Direct Handover)──► [ Thread 2 : Executing ]
+       │
+       ├─► Task 3 ──────┐
+       │                ├──────────────► [ WORK QUEUE : Waiting ]
+       └─► Task 4 ──────┘
+
+After completing the task the thread will not eliminate, it comes to the pool again.
+
+what are tasks ? -- Runnable, callable objects.
+
+
+
+
++------------------------------------------+
+|                PROGRAM 1                 |
++------------------------------------------+
+
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class ExecutorFramework1 {
+
+    public static void main(String[] args) {
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        for (int i = 0; i < 5; i++) {
+            int taskId = i;
+            executorService.execute(() -> {
+                System.out.println("Task %d is executed by the thread %s"
+                        .formatted(taskId, Thread.currentThread().getName()));
+            });
+        }
+
+        executorService.shutdown();
+    }
+}
+
+shotdown() - it gracefully shutdown the threads, will not take any new task wait for all threads to complete their tasks.
+Executors() - Executors is the utility class for create thread pool.
+
+O/P
+
+Task 0 is executed by the thread pool-1-thread-1
+Task 1 is executed by the thread pool-1-thread-2
+Task 2 is executed by the thread pool-1-thread-1
+Task 4 is executed by the thread pool-1-thread-1
+Task 3 is executed by the thread pool-1-thread-2
+
+* It created fixed thread pool of 2 threads
+* 5 tasks has been given asynchronously.
+* 2 Threads immediately takes 2 tasks and execute it --> comes to the pool --> takes another task waiting in the queue --> repeat.
+
+```
++-----------------------------------------------------------------------+
+|  NOTE: The Executor Framework (Thread Pool Architecture) is used by  |
+|  the Apache Tomcat web server to process incoming HTTP requests using  |
+|  reusable worker threads.                                              |
++-----------------------------------------------------------------------+
+
+```
+
+
+Can we create unlimited threads? - No - it consumes memory and at sometime the java gives us OutOfMemoryError
+
+Executor (interface)
+      │
+      ▼
+ExecutorService (interface)
+      │
+      ▼
+AbstractExecutorService (abstract class)
+      │
+   ┌──┴──────────────┐
+   ▼                 ▼
+ThreadPoolExecutor   ForkJoinPool
+      │
+      ▼
+ScheduledThreadPoolExecutor
+
+
+Executor(I)  -- execute(Runnable r) - Method
+ExecutorService(I) - execute(Runnable r) + submit(Callable c).
+
+
+The difference between runnable and callable is that runnable does not return any resyult but callable returns the result.
+
+
++------------------------------------------+
+|                PROGRAM 2                |
++------------------------------------------+
+
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+public class ExecutorFrameWork2 {
+
+    static void main() {
+
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        Future<Integer> submit = executorService.submit(() -> 10);
+
+        try {
+            System.out.println(submit.get());
+
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+
+        } finally {
+            executorService.shutdown();
+        }
+    }
+}
+
+* This above program shows how callable works with executor service submit.
+* We have submitted a task and get the Future Object which means thread is executing it and will get the result in future.
+* get() - its a special method to get the value of future object, while blocking the main thread.
+* Until the value has been received in the get. the main thread will remain blocked.
+
+
+
+invokeAll() -- give me a list of tasks (callable only), I'll execute it all and returns the list of future.
+
++------------------------------------------+
+|             THREAD POOL EXECUTOR         |
++------------------------------------------+
+
+
+ThreadPoolExecutor is a class that gives us fine-grained control over how a thread pool is configured. If we need a standard/common thread-pool configuration, we can use the Executors factory methods.
+
+ThreadPoolExecutor in constructor takes 5 values - int corePoolSize, int maxPoolSize, long keepAliveTime, Timeunit unit, BlockingQueue workqueue.
+
+corePoolSize - default number of threads in the pool.
+maxPoolSize - maximum number of threads in the pool.
+keepTimeAlive - how how much time the helper thread will remains in the pool.
+unit - unit of time for helper threads like SECONDS,MINUTES etc.
+BlockingQueue - queue to maintain the pending tasks.
+
+if corePoolSize=2 and maxPoolsize=5, then 2 threads are core threads and 3 threads are helper threads. These helper threads are created when the queue is full and core threads are already executing some tasks.
+
+example - we have corePoolSize as 2, maxPoolSize as 5, queue size is 2, we have 5 tasks coming up immediately (1,2,3,4,5). 1 and 2 has been executed by core thread.
+3 and 4 has been added to the queue, now 5th task cominng up. pool is busy, queue is not empty --> new helper thread created, which takes task 5, completed that task,
+helper thread comes to pool. wait for keep time alive and has been killed if no other task.
+
++------------------------------------------+
+|                PROGRAM 3                 |
++------------------------------------------+
+
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+public class ExecutorFramework3 {
+
+    static void main() {
+
+        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(2, 5, 5, TimeUnit.SECONDS, new ArrayBlockingQueue<>(2));
+        for (int i = 0; i < 5; i++) {
+
+            int taskId = i;
+
+            threadPoolExecutor.execute(() -> {
+
+
+                try {
+                    Thread.sleep(10000);
+                    System.out.println("Task " + taskId + " has been executed by thread: " + Thread.currentThread().getName());
+
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+
+            });
+
+        }
+
+
+    }
+}
+ O/P
+
+ /opt/homebrew/opt/java/libexec/openjdk.jdk/Contents/Home/bin/java -javaagent:/Applications/IntelliJ IDEA.app/Contents/lib/idea_rt.jar=49631 -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -classpath /Users/utkarshsharma/IdeaProjects/ExecutorFrameWork/out/production/ExecutorFrameWork ExecutorFramework3
+Task 0 has been executed by thread: pool-1-thread-1
+Task 4 has been executed by thread: pool-1-thread-3
+Task 1 has been executed by thread: pool-1-thread-2
+Task 2 has been executed by thread: pool-1-thread-1
+Task 3 has been executed by thread: pool-1-thread-3
+
+In the output it is clearly mentioned that task 3 has been executed by thred 3 which is a helper thread.
+
+
+TYPES OF QUEUE?
+
+1. Array Blocking Queue. -- fixed size.
+2. Linked Blocking Queue -- not fixed size (unbounded queue)
+
+
+CachedThreadPool - Creates thread on demand. No queue.
+SingleThreadPool - only one thread available. unbounded queue.
+ScheduledThreadPool - run task in future.
+
++------------------------------------------+
+|                PROGRAM 4                |
++------------------------------------------+
+
+import java.sql.Time;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+public class ExecutorFrameWork4 {
+
+    static void main(String[] args) {
+        ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(2);
+        scheduledExecutorService.schedule(() -> {
+
+            System.out.println("Scheduled Thread Pool Executor");
+            System.out.println("-----Ended-----");
+
+        }, 3, TimeUnit.SECONDS);
+
+        scheduledExecutorService.scheduleAtFixedRate(() -> {
+
+
+            System.out.println("Scheduled Thread Pool Executor at Fixed Rate");
+
+        }, 0, 3, TimeUnit.SECONDS);
+
+        try {
+            Thread.sleep(10000);
+            scheduledExecutorService.shutdown();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+}
+
+/opt/homebrew/opt/java/libexec/openjdk.jdk/Contents/Home/bin/java -javaagent:/Applications/IntelliJ IDEA.app/Contents/lib/idea_rt.jar=50070 -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -classpath /Users/utkarshsharma/IdeaProjects/ExecutorFrameWork/out/production/ExecutorFrameWork ExecutorFrameWork4
+Scheduled Thread Pool Executor at Fixed Rate
+Scheduled Thread Pool Executor at Fixed Rate
+Scheduled Thread Pool Executor
+-----Ended-----
+Scheduled Thread Pool Executor at Fixed Rate
+Scheduled Thread Pool Executor at Fixed Rate
+
+Process finished with exit code 0
+
+
+
+* In the first part of the code, it will print "Scheduled Thread Pool Executor" after a delay of three seconds.
+* In the second part of the code, it prints "Scheduled Thread Pool Executor at Fixed Rate", without a delay but after 3 seconds.
+
+
+Rejection Policy 
+
+Abort -- rejected and exception is thrown.
+Discard Policy - Task discarded and no exception is thrown.
+Discarded Oldest - oldest task is discarded and new task has been added to the queue.
+
+
+
+
+
+
+
+
+
