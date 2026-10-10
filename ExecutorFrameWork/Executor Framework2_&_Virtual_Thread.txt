@@ -1,0 +1,200 @@
+ We have 3 overloads of future
+ 
+ 1. submit with callable
+ 
+ Future<Integer> i = executor.submit(()->10);
+ i.get() --> blocks the current thread until the value is returned.
+ 
+ 2. submit with runnable.
+ 
+ Future<?> f1=executor.submit(()->System.out.println("Hello"));
+ if we do f1.get() --> null
+ 
+ why we have to take the value in the future if it is returning the null
+ 
+ f1.done() --> to check whether the task is completed or not.
+ 
+ 3. Submit with RUnnable with a predefined result
+ 
+ Future<String> f1=executor.submit(()->System.out.println("Hello"),"sucesss");
+ f1.get() --> get the default sucess message when the task is completed.
+ 
+
+
+ f1.get() --> interrupted exception and execution exception
+ 
+ f1.get(2,TimeUnit.SECONDS) --> it stops the main thread for 2 seconds then it throws timeout exception.
+ 
+ isDOne() --> checks wether the tasl is done or not and it does not blocks the main thread.
+ 
+ cancel(Boolean mayInterruptIfRunning) - f1.cancel(true)
+ 
+ 1. if not started -- cancels easily
+ 2. task already running - try to interrupt --> may throw interrupted exception.
+ 3. but if f1.cancel(false) --> if task started, it will not be cancelled.
+ 4. isCancelled() - to check if the task is cancelled or not
+ 
+ Future Limitation -- Completable Future.
+
+ Limitations of Future
+ 
+ 1. f1.get() --> blocking nature
+ 2. cannot connect multiple chains.
+ 
+ Completable Future -- 
+ 
+ CompletableFuture<Integer> f2=CompletableFuture.supplyAsync(()-> 10);
+ Internally it uses the fork join pool.
+ 
+ supplyAsync and runAsync
+ 
+ supplyAsync - return value
+ runAsync - no return value
+ 
+ benefits - future chaining
+ 
+ chaining 
+ 
+ thenApply - function, thenAccept-consumer, thenRun - runnable
+ 
+ thenCombine - combine the result of three completable future.
+ 
+ ** chaining is non blocking
+ 
+ Completable internally uses fork join pool 
+ 
+ completableFuture.supplyAsync(task, executor); --> we can pass our own executor as well.
+ 
+ 
+ Fork Join Pool Executor
+ 
+ parallelism - task divided into multiple subtasks and each task executed independently and then join the result.
+ 
+ we have thread pool and submission queue as well in it
+ 
+ each thread has its own private queue.
+ 
+ +-----------------------------+
+                      |    Global Submission Queue  |
+                      |  [Task 1][Task 2][Task 3]   |
+                      +--------------+--------------+
+                                     |
+                +--------------------+--------------------+
+                |                                         |
+                v                                         v
+   +-------------------------+               +-------------------------+
+   |        THREAD 1         |               |        THREAD 2         |
+   |  (Pulls / Pop from Top) |               |  (Pulls / Pop from Top) |
+   +------------+------------+               +------------+------------+
+                |                                         |
+                v                                         v
+   +-------------------------+               +-------------------------+
+   |   Work-Stealing Queue   |  <============|   Work-Stealing Queue   |
+   |      (Deque 1)          |   STEAL TASK  |      (Deque 2)          |
+   |                         |  (From Bottom)|                         |
+   | +---------------------+ |==============>| +---------------------+ |
+   | |  Task A             | |               | |  Task X             | |
+   | +---------------------+ |               | +---------------------+ |
+   | |  Task B             | |               | |  Task Y             | |
+   | +---------------------+ |               | +---------------------+ |
+   +-------------------------+               +-------------------------+
+ 
+ 
+ A task comes up which is taken by thread 1 and divide that tasks into two tasks that is task1 and task2. Now task one taken by thread 1 and put the task 2 in its stealing queue. Then this task2 has been taken by thread 2 
+ as it is idle.
+ 
+ result of task1 and task2 has been combined.
+ 
+ Fork join pool executor is only used for the task which we can divide it into sub tasks.
+ 
+ ** Note -- Java parallel stream uses the fork join pool executor.
+ 
+ 
+ Now if task3 comes up and both the threads are busy in executing the subtasks then task 3 has been added to the global queue. 
+ 
+ 
+ If any sub task is available in the stealing queue and any pending task is available in the global queue, then idle thread will not take task from the stealing queue of another thread, it takes task from the global queue.
+ But if the task is available in its own stealing queue, then it takes the task from its own queue.
+ 
+ 
+ 
+ TASK - recursive task and recursive action
+ 
+ RecursiveTask - Return value
+ RecursiveAction - No Return value.
+ 
+ arr[] --> [1,2,3,4,5,6,7,8,9]
+ 
+ if there are millions of numbers in the array and we need to find the sum, then we will use fork join pool.
+ 
+
+
+Virtual Threads 
+
+Whenever we create a thread, its been created in the JVM and it is directly linked to the operating system thread. whenever a thread is waiting or blocked that cant be used. Creating multiple threads increases the memory
+and load on cpu.
+
+Virtual Threads - Virtual Thread are the Java thread that are managed by the JVM, we can create millions of virtual thread. Until a task has been assigned, it is unlinked to the OS threads.
+
+
++---------------------------------------------------------------------------------+
+|                                 JVM USER SPACE                                  |
+|                                                                                 |
+|  +----+  +----+  +----+  +----+  +----+  +----+  +----+  +----+  +----+  +----+ |
+|  | JVM|  | JVM|  | JVM|  | JVM|  | JVM|  | JVM|  | JVM|  | JVM|  | JVM|  | JVM| |
+|  | T1 |  | T2 |  | T3 |  | T4 |  | T5 |  | T6 |  | T7 |  | T8 |  | T9 |  | T10| |
+|  +--+-+  +--+-+  +--+--+  +----+  +----+  +----+  +----+  +----+  +----+  +----+ |
++-----|------|--------|-----------------------------------------------------------+
+      |      |        |
+      |      |        +-------------------+ (Waiting / Unmapped / Scheduled)
+      |      |                            |
+======|======|============================|======================================= User / Kernel Boundary
+      v      v                            v
++-----|------|----------------------------|---------------------------------------+
+|  +--+-+  +--+-+                      +--+-+  +----+                             |
+|  | OS |  | OS |                      | OS |  | OS |                             |
+|  | T1 |  | T2 |                      | T3 |  | T4 |                             |
+|  +----+  +----+                      +----+  +----+                             |
+|                                                                                 |
+|                                 OS KERNEL SPACE                                 |
++---------------------------------------------------------------------------------+
+
+
+For example if thread 1 and thread 2 of the JVM is linked to the operating system thread 1 and thread 2. 
+
+If the thread1 goes to the waiting or blockeds state, then another virtual thread in the jvm has been linked to this os thread and executes its task.
+
+**Note - So basically in the virtual thread concept the OS thread acts as an thread pool.
+ 
+ 
+ Its benefit is we can create millions of virtual threads.
+ 
+ How many OS thread will be available -- depends on the cpu core. if the cpu core is 4, then 4 os threads , if 8 then 8 os threads. 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
